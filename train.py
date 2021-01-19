@@ -1,5 +1,5 @@
 from model.unet_model import UNet
-from utils.dataset2 import F3DS
+from utils.dataset import F3DS
 from torch import optim
 import torch.nn as nn
 from torch.nn.init import xavier_normal_, normal_
@@ -9,12 +9,13 @@ import os, copy
 from tensorboardX import SummaryWriter
 
 def train_net(net, data_ld, device, writer, epochs=100, lr=0.0001, save_dir="./models"):
-    optimizer = optim.Adam(net.parameters(), lr=lr, weight_decay=1e-6)
+    optimizer = optim.Adam(net.parameters(), lr=lr, weight_decay=1e-6, mid_loss=False)
     criterion = nn.CrossEntropyLoss()
     best_loss = float('inf')
     
     batch_size = data_ld.batch_size
     image_size = data_ld.dataset.ptsize
+    p = data_ld.dataset.p
     # 训练epochs次
     tensorboard_ind = 0
     for epoch in range(epochs):
@@ -29,9 +30,9 @@ def train_net(net, data_ld, device, writer, epochs=100, lr=0.0001, save_dir="./m
             label = label.to(device=device)
             logits = net(image)
 
-            # logits = logits.permute(0, 2,3, 1).contiguous().view(-1, num_class)
-            # label = label.permute(0, 2,3,1).contiguous().view(-1, 1)
+            logits = logits[..., p:, :-p] if mid_loss else logits
             label = label.squeeze(1).long()
+            label = label[..., p:, :-p] if mid_loss else label
             loss = criterion(logits, label)
             loss.backward()
             optimizer.step()
@@ -80,14 +81,14 @@ def weight_init(m):
 
 
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     # 选择设备，有cuda用cuda，没有就用cpu
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     patch_size = 128
     batch_size = 64
     num_class = 13
-    epochs = 200
+    epochs = 100
     # 加载数据集
     data_dir = "/home/cym/Datasets/StData-12/F3_block/"
     dataset = F3DS(data_dir, ptsize=patch_size, train=True)
@@ -101,9 +102,11 @@ if __name__ == "__main__":
     # 将网络拷贝到deivce中
     net.to(device=device)
     # 指定训练集地址，开始训练
-    writer = SummaryWriter('./logs128+20')
+    suffix = "128+p20+l128"  # 128的slide window + 20的padding，128的训练损失
+    mid_loss = True
+    writer = SummaryWriter(f'./logs{suffix}')
     
-    train_net(net, train_loader, device, writer, epochs, save_dir="./models128+20")
+    train_net(net, train_loader, device, writer, epochs, save_dir=f"./models{suffix}", mid_loss)
 
 
 

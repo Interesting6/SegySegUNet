@@ -4,7 +4,7 @@ import torch
 from torch import nn
 import os
 # import cv2
-from utils.dataset2 import F3DS
+from utils.dataset import F3DS
 from model.unet_model import UNet
 from matplotlib import pyplot as plt
 from PIL import Image
@@ -37,7 +37,7 @@ if __name__ == "__main__":
     patch_size = 128
     batch_size = 8
     num_class = 13
-    save_dir = "./results128+20"
+    save_dir = "./results128+p20+l148+np+p128+m128"
     # 加载数据集
     data_dir = "/home/cym/Datasets/StData-12/F3_block/"
     dataset = F3DS(data_dir, ptsize=patch_size, train=False)
@@ -46,9 +46,10 @@ if __name__ == "__main__":
                                                shuffle=False)
     hw = dataset.hw
     pred_mask = np.zeros((hw[0], hw[1]))
+    p = dataset.p #// 2
 
-    data2 = GaryTo3C(dataset.data2)
-    label2 = dataset.label2.astype("uint8")
+    data2 = GaryTo3C(dataset.data_cube_img[..., 2])
+    label2 = dataset.label_cube_img[..., 2].astype("uint8")
     print(np.unique(label2))
     print(label2.shape)
 
@@ -58,9 +59,10 @@ if __name__ == "__main__":
     net.eval()
     print("net prepare done")
     if not os.path.exists(save_dir):
-        os.makedirs(f"{save_dir}/img")
-        os.makedirs(f"{save_dir}/label")
-        os.makedirs(f"{save_dir}/predlabel")
+        os.makedirs(f"{save_dir}")
+        #os.makedirs(f"{save_dir}/img")
+        # os.makedirs(f"{save_dir}/label")
+        # os.makedirs(f"{save_dir}/predlabel")
 
     all_images_num = 0.
     all_acc = 0.
@@ -73,9 +75,11 @@ if __name__ == "__main__":
         batch_len = len(image)
         
         with torch.no_grad():
-            pred = net(image)
+            pred = net(image)    
+            pred = pred[..., p:, :-p]
             label = label.squeeze(1).long()
             loss = criterion(pred, label)
+
             pred = torch.softmax(pred, dim=1)
             _, pred_label = pred.max(dim=1)
             correct = label == pred_label

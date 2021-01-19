@@ -80,14 +80,14 @@ def weight_init(m):
 
 
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     # 选择设备，有cuda用cuda，没有就用cpu
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    patch_size = 44
+    patch_size = 128
     batch_size = 64
     num_class = 13
-    epochs = 250
+    epochs = 200
     # 加载数据集
     data_dir = "/home/cym/Datasets/StData-12/F3_block/"
     dataset = F3DS(data_dir, ptsize=patch_size, train=True)
@@ -101,9 +101,9 @@ if __name__ == "__main__":
     # 将网络拷贝到deivce中
     net.to(device=device)
     # 指定训练集地址，开始训练
-    writer = SummaryWriter('./logs2')
+    writer = SummaryWriter('./logs128+20')
     
-    train_net(net, train_loader, device, writer, epochs, save_dir="./models2")
+    train_net(net, train_loader, device, writer, epochs, save_dir="./models128+20")
 
 
 

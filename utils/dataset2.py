@@ -14,29 +14,6 @@ import cv2
 
 
 
-class randomRotate(nn.Module):
-    def __init__(self, degrees=[0, 90, 180, 270]):
-        super(randomRotate, self).__init__()
-        self.degrees = degrees
-
-    def __call__(self, x):
-        degree = random.choice(self.degrees)
-        return transforms.functional.rotate(x, degree,)
-
-
-class labelInverse(nn.Module):
-    def __init__(self, num_class):
-        super(labelInverse, self).__init__()
-        self.num_class = num_class
-
-    def __call__(self, x):  # ToTensor时已经除了255，只需还原到0-13即可
-        # x = x.dtype(torch.float)
-        # uni = np.floor(np.unique(x.numpy()))
-        # assert uni == self.unit8_label_map
-        x = x * self.num_class
-        x = x.floor()
-        # x = x.type(torch.int64)
-        return x
 
 
 class Norm(nn.Module):
@@ -63,7 +40,8 @@ class F3DS(Dataset):
         
         self.get_data()  # 
         self.mapDataTo1()   # 先归一化到[0, 1]之间，并用均值标准化，
-        self.hw = self.data_cube.shape[1:] # 图片大小  [463+20, 951+20,]
+        
+        
 
         self.train_seg = [0, 1, 3]
         self.test_seg = [2]
@@ -73,19 +51,26 @@ class F3DS(Dataset):
         else: # test 
             self.data_cube = self.data_cube[self.test_seg]
             self.label_cube = self.label_cube[self.test_seg]
-
+        
+        self.hw = self.data_cube.shape[1:] # 图片大小  [463, 951,]
+        
         c = 20
         if self.train:
-            self.hwarange = [torch.arange(0, x-ptsize+c, 10) for x in self.hw]
+            self.hwarange = [torch.arange(0, x-ptsize+1, 10) for x in self.hw]
         else:
-            self.hwarange = [torch.arange(0, x-ptsize, ptsize) for x in self.hw]
+            self.hwarange = [torch.arange(0, x-ptsize+1, ptsize) for x in self.hw]
         self.chwn = [self.data_cube.shape[0] ] + [len(x) for x in self.hwarange] # 切面数、h方向滑动个数、w方向滑动个数
         
         self.augment = A.Compose([
             A.PadIfNeeded(min_height=self.ptsize+c, min_width=self.ptsize+c, ),
-            A.RandomRotate90(),
+            A.OneOf([
+                A.RandomRotate90(),
+                A.Rotate((45, 45)),
+                A.Rotate((135,135)),
+            ], p=1),
             A.HorizontalFlip(),
             A.VerticalFlip(),
+            A.Transpose(),
         ])
         self.tsf = transforms.Compose([
             transforms.ToTensor(),
@@ -98,10 +83,10 @@ class F3DS(Dataset):
         self.label_path = os.path.join(self.data_dir, "F3Seis_IL190_490_Label.segy")
         self.data_cube = np.transpose(segyio.cube(self.data_path), (0,2,1))  # 只是hw互换 [c,h,w]
         self.label_cube = np.transpose(segyio.cube(self.label_path), (0,2,1))
+        
 
         self.labels = np.unique(self.label_cube)
         self.num_class = self.labels.max()
-        self.label_inv = labelInverse(self.num_class) # 得到从PIL图片到标签[0,1,2,]的映射
 
 
     def mapDataTo1(self):
@@ -111,6 +96,17 @@ class F3DS(Dataset):
         max_hw = self.data_cube.max(axis=(1,2))
         max_hw = np.expand_dims(max_hw, axis=(1,2))
         self.data_cube = 1 - self.data_cube / max_hw        # [0-1]的float
+
+
+        self.data_cube = np.transpose(self.data_cube, (1,2,0))
+        self.label_cube = np.transpose(self.label_cube, (1,2,0))
+        rsz = A.Resize(512, 1024)
+        rszed = rsz(image=self.data_cube, mask=self.label_cube)
+        self.data_cube = np.transpose(rszed["image"], (2, 0,1))
+        self.label_cube = np.transpose(rszed["mask"], (2, 0,1))
+
+        self.data2 = self.data_cube[2]
+        self.label2 = self.label_cube[2]
 
         # 计算均值方差，并标准化
         data_mean = self.data_cube.mean(axis=(1,2), keepdims=True)
@@ -159,13 +155,10 @@ class F3DS(Dataset):
 if __name__ == "__main__":
     print("******************dataset2*********************8")
     data_dir = "/home/cym/Datasets/StData-12/F3_block/"
-    dataset = F3DS(data_dir, ptsize=44, train=True)
+    dataset = F3DS(data_dir, ptsize=108, train=True)
     print("数据个数：", len(dataset))
 
     img, label = dataset[65]
-    # print(img.mode)
-    # img.save("./outs/img1.png")
-    # label.save("./outs/label1.png")
 
     print(img.shape)
     print(img.min(), img.max(), "--min, max  |  mean, std:", img.mean(), img.std())
@@ -174,7 +167,21 @@ if __name__ == "__main__":
     # print(torch.unique(label))
     labelarr = np.array(label)
     print(np.unique(labelarr))
-    # plt.imsave("outs/1111.png", labelarr, cmap="gray")
+
+
+    dataset = F3DS(data_dir, ptsize=128, train=False)
+    print("数据个数：", len(dataset))
+
+    img, label,_,_ = dataset[25]
+
+    print(img.shape)
+    print(img.min(), img.max(), "--min, max  |  mean, std:", img.mean(), img.std())
+    print(label.shape)
+    print(label.min(), label.max(), "--min, max  |  mean, std:", label.mean(), label.std())
+    # print(torch.unique(label))
+    labelarr = np.array(label)
+    print(np.unique(labelarr))
+
 
     # img = (img * 255).astype("uint8")
     # tpi = transforms.ToPILImage()
